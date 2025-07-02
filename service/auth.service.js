@@ -18,7 +18,7 @@ export const sendLogout = () => {
 export const sendRegister = (payload) => {
   return client({
     method: "post",
-    url: "/students/create",
+    url: "/users/register",
     data: payload,
   });
 };
