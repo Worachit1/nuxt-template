@@ -2,28 +2,35 @@
 definePageMeta({ middleware: "role" });
 
 import { computed, ref, onMounted } from "vue";
+import { Bar } from "vue-chartjs";
+import {
+  Chart as ChartJS,
+  Title,
+  Tooltip,
+  Legend,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+} from "chart.js";
+
+ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
 
 // ดึง auth
-const { sendLogout, user_id } = useAuth(); // ✅ user_id เป็น ref
-const { fetchUserById } = useUsers(); // ✅ ฟังก์ชันดึง user โดย id
+const { sendLogout, user_id } = useAuth();
+const { fetchUserById } = useUsers();
 const { emergencies, isLoading, fetchEmergencies, updateEmergencies } = useEmergencies();
 const router = useRouter();
 
-// โหลดข้อมูลเมื่อหน้าเพจเปิด
 onMounted(async () => {
-  if (user_id.value) {
-    await fetchUserById(user_id.value); // ✅ ต้องใช้ .value
-  }
+  if (user_id.value) await fetchUserById(user_id.value);
   await fetchEmergencies();
 });
 
-// ออกจากระบบ
 const handleLogout = async () => {
   await sendLogout();
   router.push("/login");
 };
 
-// แปลง timestamp เป็นวันที่ไทย
 const formatDate = (timestamp) => {
   if (!timestamp) return "ไม่ระบุ";
   return new Date(timestamp * 1000).toLocaleString("th-TH", {
@@ -35,13 +42,12 @@ const formatDate = (timestamp) => {
   });
 };
 
-// modal state
+// Modal
 const isModalOpen = ref(false);
 const selectedEmergency = ref(null);
 const modalNote = ref("");
 const modalStatus = ref("");
 
-// เปิด modal แก้ไข
 const openEditModal = (emergency) => {
   selectedEmergency.value = emergency;
   modalNote.value = emergency.action_note || "";
@@ -49,18 +55,14 @@ const openEditModal = (emergency) => {
   isModalOpen.value = true;
 };
 
-// บันทึกการแก้ไข
 const handleModalSubmit = async () => {
-  if (!selectedEmergency.value || !user_id.value) {
-    console.warn("Missing selected emergency or user_id");
-    return;
-  }
+  if (!selectedEmergency.value || !user_id.value) return;
 
   await updateEmergencies(
     {
       status: modalStatus.value,
       action_note: modalNote.value,
-      officer_id: user_id.value, // ✅ ส่ง officer_id จาก user_id
+      officer_id: user_id.value,
     },
     selectedEmergency.value.id
   );
@@ -68,10 +70,15 @@ const handleModalSubmit = async () => {
   isModalOpen.value = false;
   selectedEmergency.value = null;
   await fetchEmergencies();
-  console.log("user_id:", user_id.value);
 };
 
-// computed สำหรับจัดกลุ่ม emergencies ตาม type
+// เรียง emergencies ล่าสุดก่อน
+const sortedEmergencies = computed(() => {
+  if (!emergencies.value) return [];
+  return [...emergencies.value].sort((a, b) => b.created_at - a.created_at);
+});
+
+// แยกข้อมูลตามประเภท พร้อมเรียงในแต่ละกลุ่ม
 const groupedByType = computed(() => {
   if (!emergencies.value || emergencies.value.length === 0) return {};
   return emergencies.value.reduce((groups, item) => {
@@ -81,6 +88,39 @@ const groupedByType = computed(() => {
     return groups;
   }, {});
 });
+
+const groupedByTypeSorted = computed(() => {
+  const groups = groupedByType.value;
+  const sortedGroups = {};
+  for (const [type, group] of Object.entries(groups)) {
+    sortedGroups[type] = [...group].sort((a, b) => b.created_at - a.created_at);
+  }
+  return sortedGroups;
+});
+
+// ข้อมูลสำหรับกราฟ
+const chartLabels = computed(() => Object.keys(groupedByType.value));
+const chartData = computed(() => Object.values(groupedByType.value).map((group) => group.length));
+const chartOptions = {
+  responsive: true,
+  plugins: {
+    legend: { display: false },
+    title: {
+      display: true,
+      text: "เหตุฉุกเฉินแยกตามประเภท",
+    },
+  },
+};
+const chartDataset = computed(() => ({
+  labels: chartLabels.value,
+  datasets: [
+    {
+      label: "จำนวนเหตุฉุกเฉินแต่ละประเภท",
+      backgroundColor: "#42A5F5",
+      data: chartData.value,
+    },
+  ],
+}));
 </script>
 
 <template>
@@ -97,16 +137,12 @@ const groupedByType = computed(() => {
       <h2>เหตุฉุกเฉิน</h2>
 
       <div v-if="isLoading">กำลังโหลดข้อมูล...</div>
-      <div v-else-if="emergencies.length === 0">ไม่พบเหตุฉุกเฉิน</div>
+      <div v-else-if="sortedEmergencies.length === 0">ไม่พบเหตุฉุกเฉิน</div>
       <div v-else>
-        <div
-          v-for="emergency in emergencies"
-          :key="emergency.id"
-          class="card"
-        >
+        <div v-for="emergency in sortedEmergencies" :key="emergency.id" class="card">
           <p><strong>หัวข้อ:</strong> {{ emergency.title }}</p>
           <p><strong>ประเภท:</strong> {{ emergency.type }}</p>
-          <p><strong>สถานะ:</strong> {{ emergency.status  }}</p>
+          <p><strong>สถานะ:</strong> {{ emergency.status }}</p>
           <p><strong>รายละเอียด:</strong> {{ emergency.description }}</p>
           <p><strong>สถานที่:</strong> {{ emergency.location }}</p>
 
@@ -115,13 +151,20 @@ const groupedByType = computed(() => {
             <a :href="emergency.map_link" target="_blank">{{ emergency.map_link }}</a>
           </p>
 
-          <p v-if="emergency.action_note"><strong>หมายเหตุ:</strong> {{ emergency.action_note }}</p>
-          <p><strong>วันที่แจ้งเหตุ:</strong> {{ formatDate(emergency.created_at) }}</p>
+          <p v-if="emergency.action_note">
+            <strong>หมายเหตุ:</strong> {{ emergency.action_note }}
+          </p>
+          <p>
+            <strong>วันที่แจ้งเหตุ:</strong>
+            {{ formatDate(emergency.created_at) }}
+          </p>
 
           <div class="actions">
-            <!-- ปุ่ม แก้ไข แสดงเฉพาะเมื่อ status เป็น รอการตอบสนอง หรือ กำลังดำเนินการ -->
             <button
-              v-if="emergency.status === 'รอการตอบสนอง' || emergency.status === 'กำลังดำเนินการ'"
+              v-if="
+                emergency.status === 'รอการตอบสนอง' ||
+                emergency.status === 'กำลังดำเนินการ'
+              "
               @click="openEditModal(emergency)"
             >
               ✏️ แก้ไข
@@ -130,16 +173,24 @@ const groupedByType = computed(() => {
         </div>
       </div>
 
-      <!-- แสดง grouped emergencies -->
-      <section class="grouped-emergencies" v-if="emergencies.length > 0">
+      <!-- กราฟเหตุฉุกเฉิน -->
+      <section class="chart-container" v-if="chartLabels.length > 0">
+        <Bar :data="chartDataset" :options="chartOptions" />
+      </section>
+
+      <!-- grouped emergencies แยกตามประเภท -->
+      <section class="grouped-emergencies" v-if="sortedEmergencies.length > 0">
         <h2>เหตุฉุกเฉิน แยกตามประเภท</h2>
-        <div v-for="(group, type) in groupedByType" :key="type" class="group">
-          <h3 class="group-title">{{ type }}</h3>
+        <div v-for="(group, type) in groupedByTypeSorted" :key="type" class="group">
+          <h3 class="group-title">{{ type }} ({{ group.length }} รายการ)</h3>
           <div class="group-list">
             <div v-for="emergency in group" :key="emergency.id" class="card small-card">
               <p><strong>หัวข้อ:</strong> {{ emergency.title }}</p>
               <p><strong>สถานะ:</strong> {{ emergency.status }}</p>
-              <p><strong>วันที่แจ้งเหตุ:</strong> {{ formatDate(emergency.created_at) }}</p>
+              <p>
+                <strong>วันที่แจ้งเหตุ:</strong>
+                {{ formatDate(emergency.created_at) }}
+              </p>
             </div>
           </div>
         </div>
@@ -178,7 +229,7 @@ const groupedByType = computed(() => {
   max-width: 800px;
   margin: 2rem auto;
   padding: 2rem;
-  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   background-color: #f9fafb;
   border-radius: 12px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.1);
@@ -330,7 +381,7 @@ button:focus {
   padding: 0.75rem 1rem;
   border-radius: 12px;
   border: 1.8px solid #d1d5db;
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: 1rem;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
   resize: vertical;
@@ -418,4 +469,10 @@ button:focus {
   flex: 1 1 250px;
   word-break: break-word;
 }
+
+.chart-container {
+  margin: 2rem auto;
+  max-width: 800px;
+}
+
 </style>

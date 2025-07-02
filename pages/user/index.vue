@@ -3,8 +3,8 @@ definePageMeta({ middleware: "role" });
 
 const { sendLogout, user_id } = useAuth();
 const { fetchUserById } = useUsers();
-const { emergencies, isLoading, fetchEmergencies, createEmergencies } =
-  useEmergencies(); // แก้ไขชื่อ function
+const { emergencies, isLoading, getEmergenciesByUserId, createEmergencies } =
+  useEmergencies();
 const router = useRouter();
 
 const isCreateModalOpen = ref(false);
@@ -16,12 +16,17 @@ const newDescription = ref("");
 const newLocation = ref("");
 const newMapLink = ref("");
 
+const sortedEmergencies = computed(() => {
+  if (!emergencies.value) return [];
+  return [...emergencies.value].sort((a, b) => b.created_at - a.created_at);
+});
+
 // โหลดข้อมูลเมื่อเปิดหน้า
 onMounted(async () => {
   if (user_id.value) {
     await fetchUserById(user_id.value);
+    await getEmergenciesByUserId(user_id.value); // เรียกใช้ฟังก์ชันนี้แทน fetchEmergencies
   }
-  await fetchEmergencies();
 });
 
 // Logout
@@ -68,14 +73,11 @@ const handleCreateSubmit = async () => {
     map_link: newMapLink.value,
   };
 
-  console.log("ส่งข้อมูลสร้างเหตุฉุกเฉิน:", payload);
-
   try {
     await createEmergencies(payload);
     isCreateModalOpen.value = false;
-    await fetchEmergencies();
+    await getEmergenciesByUserId(user_id.value); // โหลดข้อมูลใหม่หลังสร้าง
   } catch (error) {
-    console.error("Create emergency error:", error);
     alert(
       "เกิดข้อผิดพลาดในการสร้างเหตุฉุกเฉิน: " +
         (error.response?.data?.message || error.message)
@@ -98,13 +100,17 @@ const handleCreateSubmit = async () => {
       <h2>เหตุฉุกเฉิน</h2>
 
       <button @click="openCreateModal" style="margin-bottom: 1rem">
-        ➕ สร้างเหตุฉุกเฉินใหม่
+        ➕ สร้างเหตุฉุกเฉินของคุณ
       </button>
 
       <div v-if="isLoading">กำลังโหลดข้อมูล...</div>
       <div v-else-if="emergencies.length === 0">ไม่พบเหตุฉุกเฉิน</div>
       <div v-else>
-        <div v-for="emergency in emergencies" :key="emergency.id" class="card">
+        <div
+          v-for="emergency in sortedEmergencies"
+          :key="emergency.id"
+          class="card"
+        >
           <p><strong>หัวข้อ:</strong> {{ emergency.title }}</p>
           <p><strong>ประเภท:</strong> {{ emergency.type }}</p>
           <p><strong>สถานะ:</strong> {{ emergency.status }}</p>
