@@ -72,13 +72,7 @@ const handleModalSubmit = async () => {
   await fetchEmergencies();
 };
 
-// เรียง emergencies ล่าสุดก่อน
-const sortedEmergencies = computed(() => {
-  if (!emergencies.value) return [];
-  return [...emergencies.value].sort((a, b) => b.created_at - a.created_at);
-});
-
-// แยกข้อมูลตามประเภท พร้อมเรียงในแต่ละกลุ่ม
+// แยกข้อมูลตามประเภท
 const groupedByType = computed(() => {
   if (!emergencies.value || emergencies.value.length === 0) return {};
   return emergencies.value.reduce((groups, item) => {
@@ -87,15 +81,6 @@ const groupedByType = computed(() => {
     groups[type].push(item);
     return groups;
   }, {});
-});
-
-const groupedByTypeSorted = computed(() => {
-  const groups = groupedByType.value;
-  const sortedGroups = {};
-  for (const [type, group] of Object.entries(groups)) {
-    sortedGroups[type] = [...group].sort((a, b) => b.created_at - a.created_at);
-  }
-  return sortedGroups;
 });
 
 // ข้อมูลสำหรับกราฟ
@@ -123,6 +108,7 @@ const chartDataset = computed(() => ({
 }));
 </script>
 
+
 <template>
   <div class="container">
     <header>
@@ -137,9 +123,9 @@ const chartDataset = computed(() => ({
       <h2>เหตุฉุกเฉิน</h2>
 
       <div v-if="isLoading">กำลังโหลดข้อมูล...</div>
-      <div v-else-if="sortedEmergencies.length === 0">ไม่พบเหตุฉุกเฉิน</div>
+      <div v-else-if="emergencies.length === 0">ไม่พบเหตุฉุกเฉิน</div>
       <div v-else>
-        <div v-for="emergency in sortedEmergencies" :key="emergency.id" class="card">
+        <div v-for="emergency in emergencies" :key="emergency.id" class="card">
           <p><strong>หัวข้อ:</strong> {{ emergency.title }}</p>
           <p><strong>ประเภท:</strong> {{ emergency.type }}</p>
           <p><strong>สถานะ:</strong> {{ emergency.status }}</p>
@@ -148,7 +134,9 @@ const chartDataset = computed(() => ({
 
           <p v-if="emergency.map_link">
             <strong>แผนที่:</strong>
-            <a :href="emergency.map_link" target="_blank">{{ emergency.map_link }}</a>
+            <a :href="emergency.map_link" target="_blank">{{
+              emergency.map_link
+            }}</a>
           </p>
 
           <p v-if="emergency.action_note">
@@ -160,6 +148,7 @@ const chartDataset = computed(() => ({
           </p>
 
           <div class="actions">
+            <!-- ปุ่ม แก้ไข แสดงเฉพาะเมื่อ status เป็น รอการตอบสนอง หรือ กำลังดำเนินการ -->
             <button
               v-if="
                 emergency.status === 'รอการตอบสนอง' ||
@@ -173,18 +162,23 @@ const chartDataset = computed(() => ({
         </div>
       </div>
 
-      <!-- กราฟเหตุฉุกเฉิน -->
-      <section class="chart-container" v-if="chartLabels.length > 0">
-        <Bar :data="chartDataset" :options="chartOptions" />
-      </section>
+      <!-- แสดง grouped emergencies -->
 
-      <!-- grouped emergencies แยกตามประเภท -->
-      <section class="grouped-emergencies" v-if="sortedEmergencies.length > 0">
+     <!-- กราฟเหตุฉุกเฉิน -->
+<section class="chart-container" v-if="chartLabels.length > 0">
+  <Bar :data="chartDataset" :options="chartOptions" />
+</section>
+
+      <section class="grouped-emergencies" v-if="emergencies.length > 0">
         <h2>เหตุฉุกเฉิน แยกตามประเภท</h2>
-        <div v-for="(group, type) in groupedByTypeSorted" :key="type" class="group">
+        <div v-for="(group, type) in groupedByType" :key="type" class="group">
           <h3 class="group-title">{{ type }} ({{ group.length }} รายการ)</h3>
           <div class="group-list">
-            <div v-for="emergency in group" :key="emergency.id" class="card small-card">
+            <div
+              v-for="emergency in group"
+              :key="emergency.id"
+              class="card small-card"
+            >
               <p><strong>หัวข้อ:</strong> {{ emergency.title }}</p>
               <p><strong>สถานะ:</strong> {{ emergency.status }}</p>
               <p>
@@ -469,10 +463,4 @@ button:focus {
   flex: 1 1 250px;
   word-break: break-word;
 }
-
-.chart-container {
-  margin: 2rem auto;
-  max-width: 800px;
-}
-
 </style>

@@ -84,6 +84,82 @@ const handleCreateSubmit = async () => {
     );
   }
 };
+
+// ฟังก์ชันสำหรับแปลง URL เป็น embed map
+const generateEmbedMap = (url) => {
+  try {
+    if (!url) return "";
+
+    // Clean up the URL first
+    const cleanUrl = url.trim();
+
+    // Handle Google Maps short links (maps.app.goo.gl)
+    if (
+      cleanUrl.includes("maps.app.goo.gl") ||
+      cleanUrl.includes("goo.gl/maps")
+    ) {
+      // For short links, just use the URL directly with Google Maps embed
+      return `https://maps.google.com/maps?q=${encodeURIComponent(
+        cleanUrl
+      )}&output=embed`;
+    }
+
+    // Handle regular Google Maps URLs
+    if (
+      cleanUrl.includes("google.com/maps") ||
+      cleanUrl.includes("maps.google.com")
+    ) {
+      let embedUrl = cleanUrl;
+
+      // Extract coordinates if available
+      const coordMatch = cleanUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (coordMatch) {
+        const lat = coordMatch[1];
+        const lng = coordMatch[2];
+        return `https://maps.google.com/maps?q=${lat},${lng}&output=embed`;
+      }
+
+      // Extract place name if available
+      const placeMatch = cleanUrl.match(/\/maps\/place\/([^\/&?]+)/);
+      if (placeMatch) {
+        const placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, " "));
+        return `https://maps.google.com/maps?q=${encodeURIComponent(
+          placeName
+        )}&output=embed`;
+      }
+
+      // Extract search query from URL parameters
+      const qMatch = cleanUrl.match(/[?&]q=([^&]+)/);
+      if (qMatch) {
+        const query = decodeURIComponent(qMatch[1].replace(/\+/g, " "));
+        return `https://maps.google.com/maps?q=${encodeURIComponent(
+          query
+        )}&output=embed`;
+      }
+
+      // If it's already an embed URL, return as is
+      if (cleanUrl.includes("output=embed")) {
+        return cleanUrl;
+      }
+
+      // Convert regular maps URL to embed
+      return `https://maps.google.com/maps?q=${encodeURIComponent(
+        cleanUrl
+      )}&output=embed`;
+    }
+
+    // For any other URL or text, treat as a search query
+    return `https://maps.google.com/maps?q=${encodeURIComponent(
+      cleanUrl
+    )}&output=embed`;
+  } catch (e) {
+    console.error("Error generating embed map:", e);
+    // Fallback to simple search
+    return `https://maps.google.com/maps?q=${encodeURIComponent(
+      url || ""
+    )}&output=embed`;
+  }
+};
 </script>
 
 <template>
@@ -117,12 +193,29 @@ const handleCreateSubmit = async () => {
           <p><strong>รายละเอียด:</strong> {{ emergency.description }}</p>
           <p><strong>สถานที่:</strong> {{ emergency.location }}</p>
 
-          <p v-if="emergency.map_link">
+          <div v-if="emergency.map_link" class="map-section">
             <strong>แผนที่:</strong>
-            <a :href="emergency.map_link" target="_blank">{{
-              emergency.map_link
-            }}</a>
-          </p>
+            <div class="map-container">
+              <iframe
+                :src="generateEmbedMap(emergency.map_link)"
+                width="100%"
+                height="300"
+                style="border: 0; border-radius: 12px"
+                allowfullscreen=""
+                loading="lazy"
+                referrerpolicy="no-referrer-when-downgrade"
+              ></iframe>
+            </div>
+            <div class="map-link">
+              <a
+                :href="emergency.map_link"
+                target="_blank"
+                class="external-link"
+              >
+                🔗 เปิดใน Google Maps
+              </a>
+            </div>
+          </div>
 
           <p v-if="emergency.action_note">
             <strong>หมายเหตุ:</strong> {{ emergency.action_note }}
@@ -383,5 +476,40 @@ button[style] {
 .modal-actions button:last-child:hover {
   background-color: #3730a3;
   box-shadow: 0 6px 14px rgb(55 48 163 / 0.7);
+}
+
+/* Map Section Styles */
+.map-section {
+  margin: 15px 0;
+}
+
+.map-container {
+  margin: 10px 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.map-link {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.external-link:hover {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 </style>
